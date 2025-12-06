@@ -1,0 +1,27 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: gitlab-pvc-injector
+webhooks:
+  - name: pvc-injector.gitlab-hooks.svc
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: pvc-injector
+        namespace: gitlab-hooks
+        path: "/mutate"
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURXekNDQWtPZ0F3SUJBZ0lVSGlJSzd1UGRISDNMaEl2WlB5Q1BKNmZOMUxvd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0tERW1NQ1FHQTFVRUF3d2RjSFpqTFdsdWFtVmpkRzl5TG1kcGRHeGhZaTFvYjI5cmN5NXpkbU13SGhjTgpNalV4TWpBek1qSTBNakF3V2hjTk16VXhNakF4TWpJME1qQXdXakFvTVNZd0pBWURWUVFEREIxd2RtTXRhVzVxClpXTjBiM0l1WjJsMGJHRmlMV2h2YjJ0ekxuTjJZekNDQVNJd0RRWUpLb1pJaHZjTkFRRUJCUUFEZ2dFUEFEQ0MKQVFvQ2dnRUJBUE5sQ3lubElKdTZoNWxicWdBeDQ2WGdQUEY1NmFKM0FWd1VWY3JuTG5uMjJydkpqVE0xOEVVeApPbk5iTDhPb2lLbzN5NEVUMEhGVG1ubDZJVjlNWWpUblBGR1VoQVZGS1AxSHBxV1dFRUt0bmV4blo5dFBpNzJVCnJtRUN1OXRKL0w5L21EeCt4UVNFNkREQVpNbnd5Zkd5K3VvSkU3TmNTT1lUTlljTzlvcEVVQjRoVWp2Z2NqMVcKdjd5YjlINUtrMXMwTUpQQS9OMVQwb05uZUtDNjZ2b1RQNnJkOGNzMlJGOFJUOEUzTEhnSzFyMER1NzhUYm9qQQpUSXl5VExTNDBWVEVScENteUNkV1dCNDlRYVNSUk1IYmpiNmVjRmQ0SG0zWlRDWFh5cnpzUmdOUVZSaFJWQ1hpCkpGRFJPUHR4SzdNNWRPaXFPNGlMMHhWVEQzQ1FzY1VDQXdFQUFhTjlNSHN3SFFZRFZSME9CQllFRlBidi9aNGIKWXdpa0JkLzdoVjZUSzRObVJEemNNQjhHQTFVZEl3UVlNQmFBRlBidi9aNGJZd2lrQmQvN2hWNlRLNE5tUkR6YwpNQThHQTFVZEV3RUIvd1FGTUFNQkFmOHdLQVlEVlIwUkJDRXdINElkY0haakxXbHVhbVZqZEc5eUxtZHBkR3hoCllpMW9iMjlyY3k1emRtTXdEUVlKS29aSWh2Y05BUUVMQlFBRGdnRUJBQWFhMzRoUFpWNUphUU0yUk42Ym1CVk4KSUhETmVpQSt6NzYrSkEwS2NTSnNKNC9ERktSWTYyYXkrelhyc0ZPUXZlNTRBbUxBdTVsMFoxYkxKT2hSZTBNOQpSM2Ftd0NodGRxNXNXU1I1UHRndld3ODZ3RUhGUExTMlFJOEdWcndRMndnTitQTVJRR2YxTzFOck4rNWV6QUM2CkxXQkszUVBYQU9Mb05OclVlc0F1bis5OUIyL21lWXNHbnlPVVJIQ003Wk1xV2RSM2plRC9xWjNlaTBUOThFSzMKTXNlTWxoQ1M3VCtKQUlsS0sxNmNjb1dXRnhpL2k2aVJjR3VnZjNvOXJ1L0VEMzNQNjc1dDM4OEsxeXY2RXhodgpzRXdIUUtvdmFXUVZyaW55TVdQSmlOelFDalNsZ1lMU1NZMVRYVFB2Si9MNS9SdzhNZWE4NldZK1R4ZnlYR289Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: gitlab-runner
+    matchConditions:
+      - name: "include-only-pods-with-share-env"
+        expression: "object.spec.containers.exists(c, has(c.env) && c.env.exists(e, e.name == 'SHARE_CLAIM_NAME'))"
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    failurePolicy: Ignore

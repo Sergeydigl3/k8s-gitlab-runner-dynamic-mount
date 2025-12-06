@@ -1,0 +1,157 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: source-code
+  namespace: gitlab-hooks
+data:
+  main.py: |
+    import uvicorn
+    from fastapi import FastAPI, Request
+    import base64
+    import json
+
+    app = FastAPI()
+
+    @app.post("/mutate")
+    async def mutate(request: Request):
+        try:
+            body = await request.json()
+            uid = body["request"]["uid"]
+            pod = body["request"]["object"]
+            spec = pod.get("spec", {})
+            containers = spec.get("containers", [])
+            
+            patch = []
+            claim_name = None
+            mnt_path = None
+            sub_path = None
+            
+            # Ищем переменные в первом контейнере
+            env_vars = containers[0].get("env", [])
+            for env in env_vars:
+                if env["name"] == "SHARE_CLAIM_NAME":
+                    claim_name = env["value"]
+                if env["name"] == "MNT_PATH":
+                    mnt_path = env["value"]
+                if env["name"] == "SHARE_SUB_PATH":
+                    sub_path = env["value"]
+
+            if claim_name and mnt_path:
+                print(f"Injecting PVC '{claim_name}' (subpath: '{sub_path}') into '{mnt_path}'")
+                
+                mount_entry = {
+                    "name": "injected-vol", 
+                    "mountPath": mnt_path
+                }
+
+                if sub_path:
+                    mount_entry["subPath"] = sub_path
+
+                if "volumeMounts" not in containers[0]:
+                    patch.append({
+                        "op": "add",
+                        "path": "/spec/containers/0/volumeMounts",
+                        "value": [mount_entry]
+                    })
+                else:
+                    patch.append({
+                        "op": "add",
+                        "path": "/spec/containers/0/volumeMounts/-",
+                        "value": mount_entry
+                    })
+
+                volume_entry = {
+                    "name": "injected-vol", 
+                    "persistentVolumeClaim": {"claimName": claim_name}
+                }
+
+                if "volumes" not in spec:
+                    patch.append({
+                        "op": "add",
+                        "path": "/spec/volumes",
+                        "value": [volume_entry]
+                    })
+                else:
+                    existing_vols = [v["name"] for v in spec["volumes"]]
+                    if "injected-vol" not in existing_vols:
+                        patch.append({
+                            "op": "add",
+                            "path": "/spec/volumes/-",
+                            "value": volume_entry
+                        })
+
+                return {
+                    "apiVersion": "admission.k8s.io/v1",
+                    "kind": "AdmissionReview",
+                    "response": {
+                        "uid": uid,
+                        "allowed": True,
+                        "patchType": "JSONPatch",
+                        "patch": base64.b64encode(json.dumps(patch).encode()).decode()
+                    }
+                }
+
+            return {
+                "apiVersion": "admission.k8s.io/v1",
+                "kind": "AdmissionReview",
+                "response": {"uid": uid, "allowed": True}
+            }
+        except Exception as e:
+            print(f"Error: {e}")
+            return {
+                "apiVersion": "admission.k8s.io/v1",
+                "kind": "AdmissionReview",
+                "response": {"uid": uid, "allowed": True}
+            }
+
+    if __name__ == "__main__":
+        uvicorn.run(app, host="0.0.0.0", port=8443, ssl_keyfile="/etc/certs/tls.key", ssl_certfile="/etc/certs/tls.crt")
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pvc-injector
+  namespace: gitlab-hooks
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pvc-injector
+  template:
+    metadata:
+      labels:
+        app: pvc-injector
+    spec:
+      containers:
+      - name: server
+        image: python:3.9-slim
+        command: ["/bin/sh", "-c"]
+        args:
+          - pip install fastapi uvicorn[standard] && python /app/main.py
+        volumeMounts:
+        - name: code
+          mountPath: /app
+        - name: tls
+          mountPath: /etc/certs
+          readOnly: true
+        ports:
+        - containerPort: 8443
+      volumes:
+      - name: code
+        configMap:
+          name: source-code
+      - name: tls
+        secret:
+          secretName: webhook-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pvc-injector
+  namespace: gitlab-hooks
+spec:
+  ports:
+  - port: 443
+    targetPort: 8443
+  selector:
+    app: pvc-injector
