@@ -2,7 +2,7 @@
 
 ## Gen certs
 
-```
+```bash
 export NS="gitlab-hooks"
 export SVC="pvc-injector"
 kubectl create ns $NS --dry-run=client -o yaml | kubectl apply -f -
@@ -41,3 +41,4 @@ output-job:
   script:
     - cat /mnt/data/test.log
 ```
+
